@@ -3,7 +3,7 @@
 
 // Written and tested using Node.js version 10.15.3
 
-/* Node.js file system module documentations: https://nodejs.org/api/fs.html */
+/* Node.js file system module documentation: https://nodejs.org/api/fs.html */
 /* Mozilla regular expression guide:
    https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions */
 
@@ -88,7 +88,7 @@ function createNewSectionText(oldSection, fixtures) {
     var fixtureSection =
            `<section class="notoc">
                 <h4>Example: ${fixture['shortName']}</h4>
-                <pre><code data-include="${fixture['path'].replace('repos', '..')}"></code></pre>
+                <pre><code data-include="${fixture['path']}"></code></pre>
             </section>`;
     fixtureSections.push(fixtureSection);
   }
