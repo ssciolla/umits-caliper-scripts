@@ -8,7 +8,8 @@
 var fs = require('fs');
 
 // Setting constants
-const RESPEC_PATH = 'repos/caliper-spec-copy/caliper-spec-respec.html';
+const RESPEC_PATH = '../caliper-spec-copy/caliper-spec-respec.html';
+const FIXTURES_PATH = '../caliper-common-fixtures/v1p2/';
 const RE_ID = /id="([^"]+)"/;
 const RE_DATA_INCLUDE = /data-include="([^"]+)"/;
 
@@ -29,17 +30,20 @@ function createFixture(fixturesPath, fixtureName) {
   fixture['fileName'] = fixtureName;
   fixture['tokens'] = fixtureTokens;
   fixture['type'] = fixtureTokens[0];
-  fixture['shortName'] = fixtureTokens.slice(1).join('');
+  fixture['shortName'] = fixtureTokens.slice(1,).join('');
 
   // Determining base names
   var irregularEndings = ['Sent', 'Anonymous', 'User'];
   var nounEndings = ['ion', 'nse'];
   if (fixture['type'] !== 'Envelope') {
     var baseTokens = [];
-    var accum = 0;
-    for (var token of fixture['tokens']) {
-      var nextToken = fixture['tokens'][accum + 1]
+    var accum = 1;
+    for (var token of fixture['tokens'].slice(1,)) {
+      var nextToken = fixture['tokens'][accum + 1];
       if (token.slice(-2,) === 'ed') {
+        // if (nextToken !== undefined) {
+        //   console.log(nextToken.slice(-3,))
+        // }
         if (nextToken === undefined) {
           break;
         } else if (nounEndings.includes(nextToken.slice(-3,)) === false) {
@@ -55,23 +59,25 @@ function createFixture(fixturesPath, fixtureName) {
         accum += 1;
       }
     }
-    fixture['baseName'] = baseTokens.join('').replace('Event', '').replace('Entity', '');
+    fixture['baseName'] = baseTokens.join('');
+  } else {
+    fixture['baseName'] = null;
   }
   return fixture;
 }
 
-// Create a fragment object storing info needed for matching with fixtures and section creation
-function createFragment(sectionText, type) {
-  var fragment = {};
-  fragment['id'] = sectionText.match(RE_ID)[1]
-  fragment['path'] = sectionText.match(RE_DATA_INCLUDE)[1];
-  fragment['type'] = type;
-  fragment['sectionText'] = sectionText;
-  return fragment;
+// Create a section object storing info needed for matching with fixtures and section creation
+function createSection(sectionText, type) {
+  var section = {};
+  section['id'] = sectionText.match(RE_ID)[1];
+  section['fragmentPath'] = sectionText.match(RE_DATA_INCLUDE)[1];
+  section['type'] = type;
+  section['sectionText'] = sectionText;
+  return section;
 }
 
 // Create new HTML section with data-include attributes for the fragment and fixture(s)
-function createNewSection(fragment, fixtures) {
+function createNewSectionText(oldSection, fixtures) {
   var fixtureSections = [];
   for (var fixture of fixtures) {
     var fixtureSection =
@@ -82,9 +88,9 @@ function createNewSection(fragment, fixtures) {
     fixtureSections.push(fixtureSection);
   }
   var newSection =
-       `<section id="${fragment['id']}">
-            <h3>${fragment['id']}</h3>
-            <div data-include="${fragment['path']}"></div>
+       `<section id="${oldSection['id']}">
+            <h3>${oldSection['id']}</h3>
+            <div data-include="${oldSection['path']}"></div>
             ${fixtureSections.join('\n            ')}
         </section>`;
   return newSection;
@@ -94,46 +100,44 @@ function createNewSection(fragment, fixtures) {
 function removeFragmentHeader(fragmentPath) {
   var fragment = fs.readFileSync(fragmentPath, 'utf8');
   var re = /<h[34]>[A-Z][a-z]+<\/h[34]>[\s]+/g;
-  fragment = fragment.replace(re, '')
-  fs.writeFileSync(fragmentPath.replace('.html', '_test.html'), fragment)
+  fragment = fragment.replace(re, '');
+  fs.writeFileSync(fragmentPath.replace('.html', '_test.html'), fragment);
 }
 
 // Main Program
-console.log('\n** Script to Place Fixtures in caliper-spec-respec.html **')
+console.log('\n** Script to Place Fixtures in caliper-spec-respec.html **');
 
 // Opening caliper-spec-respec.html
 var respec = fs.readFileSync(RESPEC_PATH, 'utf8');
 
-// Creating entity fragment records
+// Creating entity section records
 var entitiesRe = /<section id="[^"]+" data-include="fragments\/entities\/caliper-entity-[a-z]+\.html"><\/section>/g;
 var respecEntities = respec.match(entitiesRe);
-var entityFragments = [];
-var entityFragmentIds = [];
+var entitySections = [];
 for (var respecEntity of respecEntities) {
-  entityFragment = createFragment(respecEntity, 'Entity');
-  entityFragments.push(entityFragment);
-  entityFragmentIds.push(entityFragment['id']);
+  entitySection = createSection(respecEntity, 'Entity');
+  entitySections.push(entitySection);
 }
-fs.writeFileSync('entity_fragments.json', JSON.stringify(entityFragments, null, 4));
+fs.writeFileSync('entity_sections.json', JSON.stringify(entitySections, null, 4));
 
-// Creating event fragment records
+// Creating event section records
 var eventsRe = /<section id="[\w]+Event" data-include="fragments\/events\/caliper-event-[a-z]+\.html"><\/section>/g;
 var respecEvents = respec.match(eventsRe);
-var eventFragments = []
-var eventFragmentIds = [];
+var eventSections = [];
 for (var respecEvent of respecEvents) {
-  eventFragment = createFragment(respecEvent, 'Event');
-  eventFragments.push(eventFragment);
-  eventFragmentIds.push(eventFragment['id'].replace('Event', ''))
+  eventSection = createSection(respecEvent, 'Event');
+  eventSections.push(eventSection);
 }
-fs.writeFileSync('event_fragments.json', JSON.stringify(eventFragments, null, 4));
+fs.writeFileSync('event_sections.json', JSON.stringify(eventSections, null, 4));
 
 // Creating fixture records
-var fixturesPath = 'repos/caliper-common-fixtures/v1p2/';
-var fixturesDir = fs.readdirSync(fixturesPath);
+var fixturesDir = fs.readdirSync(FIXTURES_PATH, {'withFileTypes': true});
 var fixtures = [];
-for (var fixtureName of fixturesDir) {
-  fixtures.push(createFixture(fixturesPath, fixtureName));
+for (var fixtureDirent of fixturesDir) {
+  console.log(typeof fixtureDirent)
+  if (fixtureDirent.isFile()) {
+    fixtures.push(createFixture(FIXTURES_PATH, fixtureDirent.name));
+  }
 }
 fs.writeFileSync('fixtures.json', JSON.stringify(fixtures, null, 4));
 
@@ -142,38 +146,38 @@ var updatedRespec = respec;
 var placedFixtures = [];
 
 // Creating new Entity sections with embedded fixtures
-for (var entityFragment of entityFragments.slice(1,)) {
-  // console.log(`** ${entityFragment.id} **`);
+for (var entitySection of entitySections.slice(1,)) {
+  // console.log(`** ${entitySection.id} **`);
   let relatedFixtures = [];
   for (let fixture of fixtures) {
     if (fixture['type'] === 'Entity') {
-      if (fixture['baseName'] === entityFragment['id']) {
+      if (fixture['baseName'] === entitySection['id']) {
         relatedFixtures.push(fixture);
         placedFixtures.push(fixture['fileName']);
       }
     }
   }
   // console.log(relatedFixtures);
-  var newEntitySection = createNewSection(entityFragment, relatedFixtures);
-  updatedRespec = updatedRespec.replace(entityFragment.sectionText, newEntitySection);
+  var newEntitySection = createNewSectionText(entitySection, relatedFixtures);
+  updatedRespec = updatedRespec.replace(entitySection['sectionText'], newEntitySection);
 }
 
 // Creating new Event sections with embedded fixtures
-for (var eventFragment of eventFragments) {
-  // console.log(`** ${eventFragment.id} **`);
-  var simpleEventFragmentId = eventFragment.id.replace('Event', '');
+for (var eventSection of eventSections) {
+  // console.log(`** ${eventSection.id} **`);
+  var simpleEventSectionId = eventSection['id'].replace('Event', '');
   let relatedFixtures = [];
   for (let fixture of fixtures) {
     if (fixture['type'] === 'Event') {
-      if (fixture['baseName'] == simpleEventFragmentId) {
+      if (fixture['baseName'] === simpleEventSectionId) {
         relatedFixtures.push(fixture);
         placedFixtures.push(fixture['fileName']);
       }
     }
   }
   // console.log(relatedFixtures);
-  var newEventSection = createNewSection(eventFragment, relatedFixtures);
-  updatedRespec = updatedRespec.replace(eventFragment['sectionText'], newEventSection);
+  var newEventSection = createNewSectionText(eventSection, relatedFixtures);
+  updatedRespec = updatedRespec.replace(eventSection['sectionText'], newEventSection);
 }
 
 // Reporting placed fixtures
