@@ -1,8 +1,12 @@
 // Script to place fixtures in caliper-spec-respec.html
-// Written and tested using Node.js version 10.15.3
 "use strict"
 
-// Mozilla regular expression guide: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions
+// Written and tested using Node.js version 10.15.3
+
+/* Node.js file system module documentations: https://nodejs.org/api/fs.html */
+/* Mozilla regular expression guide:
+   https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions */
+
 
 // Initializing libraries
 var fs = require('fs');
@@ -13,15 +17,17 @@ const FIXTURES_PATH = '../caliper-common-fixtures/v1p2/';
 const RE_ID = /id="([^"]+)"/;
 const RE_DATA_INCLUDE = /data-include="([^"]+)"/;
 
+
 // Functions
 
-// Break a string with concatenated capitalized words into tokens
+/* Break a string with concatenated capitalized words into tokens */
 function tokenize(name) {
   var re = /[A-Z][a-z]+/g;
   return name.match(re);
 }
 
-// Create a fixture object storing info needed for matching with fixtures and section creation
+/* Create a fixture object storing info needed for matching with sections and
+   creating new sections */
 function createFixture(fixturesPath, fixtureName) {
   var re = /[A-Z][a-z]+/g;
   var fixtureTokens = tokenize(fixtureName.replace('caliper', ''));
@@ -41,9 +47,6 @@ function createFixture(fixturesPath, fixtureName) {
     for (var token of fixture['tokens'].slice(1,)) {
       var nextToken = fixture['tokens'][accum + 1];
       if (token.slice(-2,) === 'ed') {
-        // if (nextToken !== undefined) {
-        //   console.log(nextToken.slice(-3,))
-        // }
         if (nextToken === undefined) {
           break;
         } else if (nounEndings.includes(nextToken.slice(-3,)) === false) {
@@ -66,7 +69,8 @@ function createFixture(fixturesPath, fixtureName) {
   return fixture;
 }
 
-// Create a section object storing info needed for matching with fixtures and section creation
+/* Create a section object storing info needed for matching with fixtures and
+   section creation */
 function createSection(sectionText, type) {
   var section = {};
   section['id'] = sectionText.match(RE_ID)[1];
@@ -76,7 +80,8 @@ function createSection(sectionText, type) {
   return section;
 }
 
-// Create new HTML section with data-include attributes for the fragment and fixture(s)
+/* Create new HTML section with data-include attributes for the fragment and
+   fixture(s) */
 function createNewSectionText(oldSection, fixtures) {
   var fixtureSections = [];
   for (var fixture of fixtures) {
@@ -90,19 +95,21 @@ function createNewSectionText(oldSection, fixtures) {
   var newSection =
        `<section id="${oldSection['id']}">
             <h3>${oldSection['id']}</h3>
-            <div data-include="${oldSection['path']}"></div>
+            <div data-include="${oldSection['fragmentPath']}"></div>
             ${fixtureSections.join('\n            ')}
         </section>`;
   return newSection;
 }
 
-// Remove header tags and white space from beginning of a HTML fragment (not currently used)
+/* Remove header tags and white space from beginning of a HTML fragment
+   (not currently used) */
 function removeFragmentHeader(fragmentPath) {
   var fragment = fs.readFileSync(fragmentPath, 'utf8');
   var re = /<h[34]>[A-Z][a-z]+<\/h[34]>[\s]+/g;
   fragment = fragment.replace(re, '');
   fs.writeFileSync(fragmentPath.replace('.html', '_test.html'), fragment);
 }
+
 
 // Main Program
 console.log('\n** Script to Place Fixtures in caliper-spec-respec.html **');
@@ -120,6 +127,12 @@ for (var respecEntity of respecEntities) {
 }
 fs.writeFileSync('entity_sections.json', JSON.stringify(entitySections, null, 4));
 
+// Removing general Entity section from entitySections
+var notGeneralEntity = function (sectionObject) {
+  return sectionObject.id !== 'Entity';
+}
+entitySections = entitySections.filter(notGeneralEntity);
+
 // Creating event section records
 var eventsRe = /<section id="[\w]+Event" data-include="fragments\/events\/caliper-event-[a-z]+\.html"><\/section>/g;
 var respecEvents = respec.match(eventsRe);
@@ -134,7 +147,6 @@ fs.writeFileSync('event_sections.json', JSON.stringify(eventSections, null, 4));
 var fixturesDir = fs.readdirSync(FIXTURES_PATH, {'withFileTypes': true});
 var fixtures = [];
 for (var fixtureDirent of fixturesDir) {
-  console.log(typeof fixtureDirent)
   if (fixtureDirent.isFile()) {
     fixtures.push(createFixture(FIXTURES_PATH, fixtureDirent.name));
   }
@@ -146,7 +158,7 @@ var updatedRespec = respec;
 var placedFixtures = [];
 
 // Creating new Entity sections with embedded fixtures
-for (var entitySection of entitySections.slice(1,)) {
+for (var entitySection of entitySections) {
   // console.log(`** ${entitySection.id} **`);
   let relatedFixtures = [];
   for (let fixture of fixtures) {
@@ -180,21 +192,21 @@ for (var eventSection of eventSections) {
   updatedRespec = updatedRespec.replace(eventSection['sectionText'], newEventSection);
 }
 
+// Writing content in updatedRespec to new file
+fs.writeFileSync(RESPEC_PATH.replace('.html', '_updated.html'), updatedRespec, 'utf8');
+
 // Reporting placed fixtures
 console.log('\n** Placed Fixtures **');
-console.log(`${placedFixtures.length} of ${fixtures.length} Fixtures Placed`)
+console.log(`${placedFixtures.length} of ${fixtures.length} Fixtures Placed`);
 
 // Identifying fixtures not placed
 var unplacedFixtures = [];
-for (var fixture of fixtures) {
+for (let fixture of fixtures) {
   if (placedFixtures.includes(fixture['fileName']) === false) {
-    unplacedFixtures.push(fixture['fileName'])
+    unplacedFixtures.push(fixture['fileName']);
   }
 }
 console.log('\n** Unplaced fixtures **')
 for (var unplacedFixture of unplacedFixtures) {
   console.log(unplacedFixture);
 }
-
-// Writing content in updatedRespec to new file
-fs.writeFileSync(RESPEC_PATH.replace('.html', '_updated.html'), updatedRespec, 'utf8');
