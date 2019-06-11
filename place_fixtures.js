@@ -12,8 +12,8 @@
 var fs = require('fs');
 
 // Setting constants
-const RESPEC_PATH = '../caliper-spec-copy/caliper-spec-respec.html';
-const FIXTURES_PATH = '../caliper-spec-copy/fixtures/v1p2/';
+const RESPEC_PATH = '../caliper-spec/caliper-spec-respec.html';
+const FIXTURES_PATH = '../caliper-spec/fixtures/v1p2/';
 const RE_ID = /id="([^"]+)"/;
 const RE_DATA_INCLUDE = /data-include="([^"]+)"/;
 
@@ -32,7 +32,7 @@ function createFixture(fixturesPath, fixtureName) {
   var re = /[A-Z][a-z]+/g;
   var fixtureTokens = tokenize(fixtureName.replace('caliper', ''));
   var fixture = {};
-  fixture['path'] = fixturesPath + fixtureName;
+  fixture['path'] = fixturesPath.replace('../caliper-spec/', '') + fixtureName;
   fixture['fileName'] = fixtureName;
   fixture['type'] = fixtureTokens[0];
   fixture['nameTokens'] = fixtureTokens.slice(1,); // everything after type
@@ -41,7 +41,7 @@ function createFixture(fixturesPath, fixtureName) {
   // Determining baseName and nameExtension
   var irregularEndings = ['Sent', 'Anonymous', 'User'];
   var nounEndings = ['ion', 'nse'];
-  var irregularTypes = ['Envelope', 'Selector'];
+  var irregularTypes = ['Envelope', 'Endpoint', 'Selector'];
   if (irregularTypes.includes(fixture['type']) === false) {
     var baseTokens = [];
     var accum = 0;
@@ -49,29 +49,24 @@ function createFixture(fixturesPath, fixtureName) {
       var nextToken = fixture['nameTokens'][accum + 1];
       if (token.slice(-2,) === 'ed') {
         if (nextToken === undefined) {
-          var firstExtensionIndex = accum;
           break;
         } else if (nounEndings.includes(nextToken.slice(-3,)) === false) {
-          var firstExtensionIndex = accum;
           break;
         } else {
           baseTokens.push(token);
           accum += 1;
         }
       } else if (irregularEndings.includes(token)) {
-        var firstExtensionIndex = accum;
         break;
       } else {
         baseTokens.push(token);
-        if (nextToken === undefined) {
-          var firstExtensionIndex = accum + 1;
-        } else {
+        if (nextToken !== undefined) {
           accum += 1;
         }
       }
     }
     fixture['baseName'] = baseTokens.join('');
-    fixture['nameExtension'] = fixture['nameTokens'].slice(firstExtensionIndex,).join('');
+    fixture['nameExtension'] = fixture['fullName'].replace(fixture['baseName'], '');
     fixture['nameExtension'] = (fixture['nameExtension'] === '') ? null : fixture['nameExtension'];
   } else {
     // Setting properties to null for Envelope and Selector fixtures
@@ -121,6 +116,7 @@ function createSectionTextWithFigures(oldSection, fixtures) {
   var sectionTextWithFigures = oldSection['sectionText'] + '\n        ' + fixtureFigures.join('\n        ');
   return sectionTextWithFigures;
 }
+
 
 // Main Program
 console.log('\n** Script to Place Fixtures in caliper-spec-respec.html **');
