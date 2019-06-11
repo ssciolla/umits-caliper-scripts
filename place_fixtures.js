@@ -12,8 +12,8 @@
 var fs = require('fs');
 
 // Setting constants
-const RESPEC_PATH = '../caliper-spec/caliper-spec-respec.html';
-const FIXTURES_PATH = '../caliper-spec/fixtures/v1p2/';
+const RESPEC_PATH = '../../IMSGlobal/caliper-spec/caliper-spec-respec.html';
+const FIXTURES_PATH = '../../IMSGlobal/caliper-spec/fixtures/v1p2/';
 const RE_ID = /id="([^"]+)"/;
 const RE_DATA_INCLUDE = /data-include="([^"]+)"/;
 
@@ -32,7 +32,7 @@ function createFixture(fixturesPath, fixtureName) {
   var re = /[A-Z][a-z]+/g;
   var fixtureTokens = tokenize(fixtureName.replace('caliper', ''));
   var fixture = {};
-  fixture['path'] = fixturesPath.replace('../caliper-spec/', '') + fixtureName;
+  fixture['path'] = fixturesPath.replace('../../IMSGlobal/caliper-spec/', '') + fixtureName;
   fixture['fileName'] = fixtureName;
   fixture['type'] = fixtureTokens[0];
   fixture['nameTokens'] = fixtureTokens.slice(1,); // everything after type
@@ -108,7 +108,7 @@ function createSectionTextWithFigures(oldSection, fixtures) {
     var caption = createFigureCaption(fixture);
     var fixtureFigure =
     `<figure class="example">
-            <figcaption> - ${caption} - JSON-LD</figcaption>
+            <figcaption> - ${caption} JSON-LD</figcaption>
             <pre><code data-include="${fixture['path']}"></code></pre>
         </figure>`;
     fixtureFigures.push(fixtureFigure);
