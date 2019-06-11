@@ -27,7 +27,7 @@ function tokenize(name) {
 }
 
 /* Create a fixture object storing info needed for matching with sections and
-   creating new sections */
+   creating figures */
 function createFixture(fixturesPath, fixtureName) {
   var re = /[A-Z][a-z]+/g;
   var fixtureTokens = tokenize(fixtureName.replace('caliper', ''));
@@ -74,7 +74,7 @@ function createFixture(fixturesPath, fixtureName) {
     fixture['nameExtension'] = fixture['nameTokens'].slice(firstExtensionIndex,).join('');
     fixture['nameExtension'] = (fixture['nameExtension'] === '') ? null : fixture['nameExtension'];
   } else {
-    // Setting properties to null for Envelope fixtures
+    // Setting properties to null for Envelope and Selector fixtures
     fixture['baseName'] = null;
     fixture['nameExtension'] = null;
   }
@@ -92,8 +92,8 @@ function createSection(sectionText, type) {
   return section;
 }
 
-/* Create string based on fixture object values that will serve as the core of the figure caption (only handles
-   Event and Entity fixtures) */
+/* Create string based on fixture object values that will serve as the core of the figure caption
+   (only handles Event and Entity fixtures) */
 function createFigureCaption(fixture) {
   if (fixture['type'] === 'Event') {
     var caption = fixture['baseName'] + fixture['type'] + ` (${fixture['nameExtension']})`;
@@ -106,8 +106,7 @@ function createFigureCaption(fixture) {
   return caption
 }
 
-/* Create figures  with data-include attributes for the fragment and
-   fixture(s) */
+/* Create figures with data-include attributes and combine with related fragment section */
 function createSectionTextWithFigures(oldSection, fixtures) {
   var fixtureFigures = [];
   for (var fixture of fixtures) {
