@@ -4,16 +4,18 @@
 // Written and tested using Node.js version 10.15.3
 
 /* Node.js file system module documentation: https://nodejs.org/api/fs.html */
+/* cheerio documentation: https://cheerio.js.org/ */
 /* Mozilla regular expression guide:
    https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions */
 
-
 // Initializing libraries
-var fs = require('fs');
+const fs = require('fs');
+const cheerio = require('cheerio');
 
 // Setting constants
-const RESPEC_PATH = '../../IMSGlobal/caliper-spec/caliper-spec-respec.html';
-const FIXTURES_PATH = '../../IMSGlobal/caliper-spec/fixtures/v1p2/';
+const SPEC_PATH = '../../IMSGlobal/caliper-spec/'
+const RESPEC_PATH = SPEC_PATH + 'caliper-spec-respec.html';
+const FIXTURES_PATH = SPEC_PATH + 'fixtures/v1p2/';
 const RE_ID = /id="([^"]+)"/;
 const RE_DATA_INCLUDE = /data-include="([^"]+)"/;
 
@@ -29,51 +31,58 @@ function tokenize(name) {
 /* Create a fixture object storing info needed for matching with sections and
    creating figures */
 function createFixture(fixturesPath, fixtureName) {
-  var re = /[A-Z][a-z]+/g;
-  var fixtureTokens = tokenize(fixtureName.replace('caliper', ''));
   var fixture = {};
-  fixture['path'] = fixturesPath.replace('../../IMSGlobal/caliper-spec/', '') + fixtureName;
+  fixture['path'] = fixturesPath.replace(SPEC_PATH, '') + fixtureName;
   fixture['fileName'] = fixtureName;
-  fixture['type'] = fixtureTokens[0];
-  fixture['nameTokens'] = fixtureTokens.slice(1,); // everything after type
-  fixture['fullName'] = fixture['nameTokens'].join('');
 
-  // Determining baseName and nameExtension
-  var irregularEndings = ['Sent', 'Anonymous', 'User'];
-  var nounEndings = ['ion', 'nse'];
-  var irregularTypes = ['Envelope', 'Endpoint', 'Selector'];
-  if (irregularTypes.includes(fixture['type']) === false) {
-    var baseTokens = [];
-    var accum = 0;
-    for (var token of fixture['nameTokens']) {
-      var nextToken = fixture['nameTokens'][accum + 1];
-      if (token.slice(-2,) === 'ed') {
-        if (nextToken === undefined) {
-          break;
-        } else if (nounEndings.includes(nextToken.slice(-3,)) === false) {
-          break;
-        } else {
-          baseTokens.push(token);
-          accum += 1;
-        }
-      } else if (irregularEndings.includes(token)) {
-        break;
-      } else {
-        baseTokens.push(token);
-        if (nextToken !== undefined) {
-          accum += 1;
-        }
-      }
+  fixture['contents'] = JSON.parse(fs.readFileSync(fixturesPath + fixtureName));
+  fixture['type'] = fixture['contents']['type'];
+  fixture['id'] = fixture['contents']['id'];
+  if (fixture['type'] !== undefined) {
+    fixture['typeTokens'] = tokenize(fixture['type']);
+    var typesToIgnore = ['TextPositionSelector'];
+    if (fixture['typeTokens'][fixture['typeTokens'].length - 1] === 'Event' && fixture['typeTokens'].length > 1) {
+      fixture['superType'] = 'Event';
+      fixture['relatedAction'] = fixture['contents']['action'];
+    } else if (typesToIgnore.includes(fixture['type']) === false) {
+      fixture['superType'] = 'Entity';
     }
-    fixture['baseName'] = baseTokens.join('');
-    fixture['nameExtension'] = fixture['fullName'].replace(fixture['baseName'], '');
-    fixture['nameExtension'] = (fixture['nameExtension'] === '') ? null : fixture['nameExtension'];
+    if (Object.keys(fixture['contents']).includes('extensions')) {
+      fixture['extended'] = true;
+    } else {
+      fixture['extended'] = false;
+    }
   } else {
-    // Setting properties to null for Envelope and Selector fixtures
-    fixture['baseName'] = null;
-    fixture['nameExtension'] = null;
+    fixture['typeTokens'] = null;
+    fixture['superType'] = null;
+    fixture['type'] = null;
+    fixture['Extended'] = null;
   }
   return fixture;
+}
+
+/* Parse fragment contents and create object representation of DL */
+function parseFragmentDl(fragmentPath) {
+  var contents = fs.readFileSync(SPEC_PATH + fragmentPath, 'utf8');
+  var $ = cheerio.load(contents, {normalizeWhitespace: true});
+  var fragmentDl = {};
+  $ = $('dl').children();
+  var numTags = $.length;
+  $ = $.first();
+  value = $.text().replace(/\n  [ ]*/g, ' ').trim();
+  fragmentDl[value] = null;
+  var pairKey = value;
+  for (var i = 2; i < numTags + 1; i++) {
+    $ = $.next();
+    var value = $.text().replace(/\n  [ ]*/g, ' ').trim()
+    if (i % 2 === 0) {
+      fragmentDl[pairKey] = value;
+    } else {
+      fragmentDl[value] = null;
+      pairKey = value;
+    }
+  }
+  return fragmentDl;
 }
 
 /* Create a section object storing info needed for matching with fixtures and
@@ -84,28 +93,36 @@ function createSection(sectionText, type) {
   section['fragmentPath'] = sectionText.match(RE_DATA_INCLUDE)[1];
   section['type'] = type;
   section['sectionText'] = sectionText;
+  section['fragmentDl'] = parseFragmentDl(section['fragmentPath']);
   return section;
 }
 
 /* Create string based on fixture object values that will serve as the core of the figure caption
    (only handles Event and Entity fixtures) */
-function createFigureCaption(fixture) {
-  if (fixture['type'] === 'Event') {
-    var caption = fixture['baseName'] + fixture['type'] + ` (${fixture['nameExtension']})`;
-  } else if (fixture['type'] === 'Entity') {
-    var caption = fixture['baseName'];
-    if (fixture['nameExtension'] !== null) {
-      caption += ` - ${fixture['nameExtension']}`
-    }
+function createFigureCaption(fixture, termIRI) {
+//  console.log(fixture['fileName'].replace('caliper', '').replace(fixture['superType'], '').replace(fixture['type'].replace('Event', ''), '').replace(fixture['relatedAction'], ''));
+  var baseString = fixture['type'];
+  var actionString = '';
+  var descriptors = [];
+  if (fixture['superType'] === 'Event') {
+    actionString = ` (${fixture['relatedAction']})`;
   }
-  return caption
+  if (fixture['id'] === termIRI) {
+    descriptors.push('Anonymous');
+  }
+  if (fixture['extended'] === true) {
+    descriptors.push('Extended');
+  }
+  var descriptorsString = ` ${descriptors.join(' ')}`;
+  var caption = baseString + descriptorsString + actionString;
+  return caption;
 }
 
 /* Create figures with data-include attributes and combine with related fragment section */
 function createSectionTextWithFigures(oldSection, fixtures) {
   var fixtureFigures = [];
   for (var fixture of fixtures) {
-    var caption = createFigureCaption(fixture);
+    var caption = createFigureCaption(fixture, oldSection['fragmentDl']['IRI']);
     var fixtureFigure =
     `<figure class="example">
             <figcaption> - ${caption} JSON-LD</figcaption>
@@ -125,14 +142,13 @@ console.log('\n** Script to Place Fixtures in caliper-spec-respec.html **');
 var respec = fs.readFileSync(RESPEC_PATH, 'utf8');
 
 // Creating entity section records
-var entitiesRe = /<section id="[^"]+" data-include="fragments\/entities\/caliper-entity-[a-z]+\.html"><\/section>/g;
+var entitiesRe = /<section id="[^"]+" data-include="fragments\/entities\/caliper-entity-[A-Za-z]+\.html"><\/section>/g;
 var respecEntities = respec.match(entitiesRe);
 var entitySections = [];
 for (var respecEntity of respecEntities) {
-  entitySection = createSection(respecEntity, 'Entity');
+  var entitySection = createSection(respecEntity, 'Entity');
   entitySections.push(entitySection);
 }
-fs.writeFileSync('entity_sections.json', JSON.stringify(entitySections, null, 4));
 
 // Removing general Entity section from entitySections
 var notGeneralEntity = function (sectionObject) {
@@ -140,12 +156,14 @@ var notGeneralEntity = function (sectionObject) {
 }
 entitySections = entitySections.filter(notGeneralEntity);
 
+fs.writeFileSync('entity_sections.json', JSON.stringify(entitySections, null, 4));
+
 // Creating event section records
-var eventsRe = /<section id="[\w]+Event" data-include="fragments\/events\/caliper-event-[a-z]+\.html"><\/section>/g;
+var eventsRe = /<section id="[\w]+Event" data-include="fragments\/events\/caliper-event-[A-Za-z]+\.html"><\/section>/g;
 var respecEvents = respec.match(eventsRe);
 var eventSections = [];
 for (var respecEvent of respecEvents) {
-  eventSection = createSection(respecEvent, 'Event');
+  var eventSection = createSection(respecEvent, 'Event');
   eventSections.push(eventSection);
 }
 fs.writeFileSync('event_sections.json', JSON.stringify(eventSections, null, 4));
@@ -169,8 +187,8 @@ for (var entitySection of entitySections) {
   // console.log(`** ${entitySection.id} **`);
   let relatedFixtures = [];
   for (let fixture of fixtures) {
-    if (fixture['type'] === 'Entity') {
-      if (fixture['baseName'] === entitySection['id']) {
+    if (fixture['superType'] === 'Entity') {
+      if (fixture['type'] === entitySection['id']) {
         relatedFixtures.push(fixture);
         placedFixtures.push(fixture['fileName']);
       }
@@ -184,11 +202,10 @@ for (var entitySection of entitySections) {
 // Creating new Event sections with embedded fixtures
 for (var eventSection of eventSections) {
   // console.log(`** ${eventSection.id} **`);
-  var simpleEventSectionId = eventSection['id'].replace('Event', '');
   let relatedFixtures = [];
   for (let fixture of fixtures) {
-    if (fixture['type'] === 'Event') {
-      if (fixture['baseName'] === simpleEventSectionId) {
+    if (fixture['superType'] === 'Event') {
+      if (fixture['type'] === eventSection['id']) {
         relatedFixtures.push(fixture);
         placedFixtures.push(fixture['fileName']);
       }
