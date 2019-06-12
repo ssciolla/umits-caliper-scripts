@@ -1,3 +1,5 @@
 .idea
-*.json
+entity_sections.json
+event_sections.json
+fixtures.json
 node_modules/
