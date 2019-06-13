@@ -1,5 +1,4 @@
 .idea
-entity_sections.json
-event_sections.json
+sections.json
 fixtures.json
 node_modules/
