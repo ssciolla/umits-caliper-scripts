@@ -19,6 +19,9 @@ const FIXTURES_PATH = SPEC_PATH + 'fixtures/v1p2/';
 
 //// Functions
 
+
+// Fixture Object Creation
+
 /* Break a string with concatenated capitalized words into tokens */
 function tokenize(name) {
   var re = /[A-Z][a-z]+/g;
@@ -31,7 +34,6 @@ function createFixture(fixturesPath, fixtureName) {
   var fixture = {};
   fixture['path'] = fixturesPath.replace(SPEC_PATH, '') + fixtureName;
   fixture['fileName'] = fixtureName;
-
   fixture['contents'] = JSON.parse(fs.readFileSync(fixturesPath + fixtureName));
   if (fixture['contents']['type'] !== undefined) {
     var typeTokens = tokenize(fixture['contents']['type']);
@@ -46,6 +48,9 @@ function createFixture(fixturesPath, fixtureName) {
   }
   return fixture;
 }
+
+
+// Section Object Creation
 
 /* Parse fragment contents and create object representation of DL */
 function parseFragmentDl(fragmentPath) {
@@ -83,7 +88,23 @@ function createSection(sectionText) {
   return section;
 }
 
-/* Checks to see if values of fixture contain any objects */
+
+// HTML Figure and Caption Creation
+
+/* Generate a natural language list given a series of strings */
+function writeNatLangList(listOfTerms) {
+  var natLangList;
+  if (listOfTerms.length > 2) {
+    natLangList = listOfTerms.slice(0, listOfTerms.length - 1).join(', ') + ' and ' + listOfTerms[listOfTerms.length - 1];
+  } else if (listOfTerms.length == 2) {
+    natLangList = listOfTerms[0] + ' and ' + listOfTerms[1];
+  } else {
+    natLangList = listOfTerms[0];
+  }
+  return natLangList;
+}
+
+/* Check to see if values of fixture contain any objects, in assist with identifying thinned entities */
 function checkForObjects(contents) {
   var values = Object.values(contents);
   for (var value of values) {
@@ -94,78 +115,187 @@ function checkForObjects(contents) {
   return false;
 }
 
-/* Create string based on fixture object values that will serve as the core of the figure caption
-   (only handles Event and Entity fixtures) */
-function createFigureCaption(fixture, termIRI) {
-  var caption = fixture['contents']['type'];
-
-  // Descriptors
-  var descriptors = [];
-  // Anonymous
-  if (fixture['contents']['id'] === termIRI) {
-    descriptors.push('Anonymous');
-  }
-  // Extended
-  if (Object.keys(fixture['contents']).includes('extensions')) {
-    descriptors.push('Extended');
-  }
-  // Thinned
-  if (fixture['superType'] === 'Event' && checkForObjects(fixture['contents']) === false) {
-    descriptors.push('Thinned');
-  }
-
-  // With User Agent
-  if (Object.keys(fixture['contents']).includes('userAgent')) {
-    descriptors.push('with UserAgent');
-  }
-  // With Client
-  if (fixture['contents']['type'] === 'SessionEvent' && Object.keys(fixture['contents']).includes('session')) {
-    if (Object.keys(fixture['contents']['session']).includes('client')) {
-      descriptors.push('with Client');
+/* Fetch a URI from an HTML section record given a type term, to assist with identifying anonymous entities */
+function findEntityTypeIRI(entityType) {
+  // sections referenced from global scope
+  for (var section of sections) {
+    var term = section['fragmentDl']['Term'];
+    if (term === entityType) {
+      var entityTypeIRI = section['fragmentDl']['IRI'];
+      return entityTypeIRI;
     }
   }
-  // With FederatedSession
-  if (Object.keys(fixture['contents']).includes('federatedSession')) {
-    descriptors.push('with FederatedSession');
+  return undefined;
+}
+
+/* Combines a base string with previously collected adjectives and with modifiers */
+function convertDescriptionToString(baseString, adjectives, withModifiers) {
+  var stringRep = baseString;
+  if (adjectives.length > 0) {
+    stringRep += ' ' + writeNatLangList(adjectives);
   }
-  if (descriptors.length > 0) {
-    caption += ' ' + descriptors.join(' ');
+  if (withModifiers.length > 0) {
+    stringRep += ' with ' + writeNatLangList(withModifiers);
+  }
+  return stringRep;
+}
+
+/* Create object (including a string representation) that describes an entity */
+function describeEntity(entity) {
+  var entityDescriptors = {};
+  var adjectives = [];
+  var withModifiers = [];
+
+  // Anonymous
+  var entityTypeIRI = findEntityTypeIRI(entity['type']);
+  if (entity['id'] === entityTypeIRI) {
+    adjectives.push('Anonymous');
+  }
+  // Extended
+  if (Object.keys(entity).includes('extensions')) {
+    adjectives.push('Extended');
+  }
+  // ReplyTo
+  if (Object.keys(entity).includes('replyTo')) {
+    withModifiers.push('ReplyTo');
+  }
+  // User Agent
+  if (Object.keys(entity).includes('userAgent')) {
+    withModifiers.push('UserAgent');
+  }
+  // Client
+  if (entity['type'] === 'Session' && Object.keys(entity).includes('client')) {
+    withModifiers.push('Client');
+  }
+  // Scale
+  if (entity['type'] === 'Rating') {
+    if (Object.keys(entity).includes('question') && Object.keys(entity['question']).includes('scale')) {
+      withModifiers.push(entity['question']['scale']['type']);
+    }
+  }
+
+  var entityString = convertDescriptionToString(entity['type'], adjectives, withModifiers);
+  var entityDescription = {
+    'entityString': entityString,
+    'adjectives': adjectives,
+    'withModifiers': withModifiers
+  }
+  return entityDescription;
+}
+
+/* Create string representing an action associated with an event, including (if relevant) an action's object and
+   other descriptors */
+function describeAction(event, includeObject) {
+  var actionString = event['action'];;
+  var objectString;
+  if (includeObject) {
+    if (typeof event['object'] === 'object') {
+      if (event['type'] === 'GradeEvent') {
+        // Treat the entity value of the assignable property as the action's object
+        var objectString = describeEntity(event['object']['assignable'])['entityString'];
+      } else if (event['type'] === 'QuestionnaireItemEvent') {
+        // Treat the entity value of the question property as the action's object
+        var objectString = describeEntity(event['object']['question'])['entityString'];
+      } else {
+        // Treat the entity value of the object property as the action's object
+        var objectString = describeEntity(event['object'])['entityString'];
+      }
+    }
+    if (objectString !== undefined) {
+      actionString += ' ' + objectString;
+    }
+  }
+
+  // Used WithProgress
+  if (event['type'] === 'ToolUseEvent' && Object.keys(event).includes('generated')) {
+    actionString += ' with Progress';
+  }
+  return actionString
+}
+
+/* Identifies actions shared by  multiple fixtures for an event subtype */
+function findRepeatedActions(eventFixtures) {
+  var inventory = {}
+  for (var eventFixture of eventFixtures) {
+    var action = eventFixture['contents']['action'];
+    if (Object.keys(inventory).includes(action) === false) {
+      inventory[action] = 0;
+    } else {
+      inventory[action] += 1;
+    }
+  }
+  var repeatedActions = [];
+  for (var key of Object.keys(inventory)) {
+    if (inventory[key] > 0) {
+      repeatedActions.push(key);
+    }
+  }
+  return repeatedActions;
+}
+
+/* Create object (including a string representation) that describes an event */
+function describeEvent(event, relatedFixtures) {
+  var eventType = event['type'];
+
+  var adjectives = [];
+  var withModifiers = [];
+
+  // Thinned
+  if (checkForObjects(event) === false) {
+    adjectives.push('Thinned');
+  }
+  // Extended
+  if (Object.keys(event).includes('extensions')) {
+    adjectives.push('Extended');
+  }
+  // With FederatedSession
+  if (Object.keys(event).includes('federatedSession')) {
+    withModifiers.push('FederatedSession');
   }
 
   // Action
-  if (fixture['superType'] === 'Event') {
-    var action = fixture['contents']['action'];
-    var actionString = action;
-    if (['Paused', 'NavigatedTo', 'Graded'].includes(action) && typeof fixture['contents']['object'] === 'object') {
-      if (action === 'Graded') {
-        var object = fixture['contents']['object']['assignable']['type'];
-      } else {
-        var object = fixture['contents']['object']['type'];
+  var repeatedActions = findRepeatedActions(relatedFixtures);
+  if (repeatedActions.includes(event['action'])) {
+    var includeObject = true;
+  } else {
+    var includeObject = false;
+  }
+
+  var actionString = describeAction(event, includeObject)
+
+  // Irregular entities (excluding object and extensions)
+  for (var key of Object.keys(event)) {
+    let value = event[key];
+    if ((['object', 'extensions'].includes(key) === false) && typeof value == 'object') {
+      var entityDescription = describeEntity(value);
+      if (entityDescription['adjectives'].length > 0 || entityDescription['withModifiers'].length > 0) {
+        withModifiers.push(entityDescription['entityString']);
       }
     }
-    if (object !== undefined) {
-      actionString += ' ' + object;
-    }
-
-    // ReplyTo
-    if (fixture['contents']['type'] === 'MessageEvent' && Object.keys(fixture['contents']['object']).includes('replyTo')) {
-      actionString += ' Reply To';
-    }
-    // Used WithProgress
-    if (fixture['contents']['type'] === 'ToolUseEvent' && Object.keys(fixture['contents']).includes('generated')) {
-      actionString += ' with Progress';
-    }
-    actionString = `(${actionString})`;
-    caption += ' ' + actionString;
   }
-  return caption;
+
+  var eventPlusAction = eventType + ` (${actionString})`;
+  var eventString = convertDescriptionToString(eventPlusAction, adjectives, withModifiers);
+
+  var eventDescription = {
+    'eventString': eventString,
+    'adjectives': adjectives,
+    'withModifiers': withModifiers
+  }
+  return eventDescription;
 }
 
 /* Create figures with data-include attributes and combine with related fragment section */
-function createSectionTextWithFigures(oldSection, fixtures) {
+function createSectionTextWithFigures(oldSection, relatedFixtures) {
   var fixtureFigures = [];
-  for (var fixture of fixtures) {
-    var caption = createFigureCaption(fixture, oldSection['fragmentDl']['IRI']);
+
+  for (var fixture of relatedFixtures) {
+    var caption;
+    if (fixture['superType'] === 'Entity') {
+      caption = describeEntity(fixture['contents'])['entityString'];
+    } else if (fixture['superType'] === 'Event') {
+      caption = describeEvent(fixture['contents'], relatedFixtures)['eventString'];
+    }
     var fixtureFigure =
     `<figure class="example">
             <figcaption> - ${caption} JSON-LD</figcaption>
@@ -177,8 +307,10 @@ function createSectionTextWithFigures(oldSection, fixtures) {
   return sectionTextWithFigures;
 }
 
+
 //// Main Program
-console.log('\n** Script to Place Fixtures in caliper-spec-respec.html **');
+
+console.log('\n** Script to place fixtures in caliper-spec-respec.html **');
 
 // Opening caliper-spec-respec.html
 var respec = fs.readFileSync(RESPEC_PATH, 'utf8');
@@ -209,14 +341,16 @@ for (var fixtureDirent of fixturesDir) {
 fs.writeFileSync('fixtures.json', JSON.stringify(fixtures, null, 4));
 
 // Creating new version of respec with embedded fixtures
-var sectionIdsToIgnore = ['Event', 'Entity'];
-var fixturesToIgnore = ['caliperEntityLearningObjective.json']; // temporary fix
+var sectionIdsToIgnore = ['Event', 'Entity', 'LearningObjective'];
+var fixturesToIgnore = [
+  'caliperEntityLearningObjective.json', // temporary fix
+  'caliperEventMessagePostedInlineContext.json' // placed manually under Serialization
+];
 
 var placedFixtures = [];
 var updatedRespec = respec;
 
 for (var section of sections) {
-//  console.log(`** ${section['id']} **`);
   if (sectionIdsToIgnore.includes(section['id']) === false) {
     let relatedFixtures = [];
     for (let fixture of fixtures) {
@@ -227,7 +361,6 @@ for (var section of sections) {
         }
       }
     }
-//    console.log(relatedFixtures);
     var sectionWithFigures = createSectionTextWithFigures(section, relatedFixtures);
     updatedRespec = updatedRespec.replace(section['sectionText'], sectionWithFigures);
   }
